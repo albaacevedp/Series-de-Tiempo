@@ -1,0 +1,383 @@
+---
+output:
+  pdf_document: default
+  word_document: default
+header-includes: \pagenumbering{gobble}
+---
+PROYECTO FINAL. SERIES DE TIEMPO
+```{r, echo=FALSE,message=FALSE}
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(astsa)
+library(timeSeries)
+library(forecast)
+library(TTR)
+library(TSA)
+library(fUnitRoots)
+library(nortest)
+library(tseries)
+library(data.table)
+library(xtable)
+```
+```{r, echo=FALSE,include=FALSE}
+pasajeros<- read_excel("C:/Users/compu/OneDrive/Documents/series de tiempo/proyecto/series de tiempo/Proyecto Pasajeros.xlsx", sheet = 29, range ="A2:D134")
+colnames(pasajeros)[1]<- "Mes"
+pasajeros$Mes<-as.Date(pasajeros$Mes,format= "%Y-%m-%d")
+pasajeros$`Viva Aerobus`<-pasajeros$`Viva Aerobus`/1000
+```
+```{r, echo=FALSE}
+ggplot(pasajeros, aes(x = Mes, y = `Viva Aerobus`)) +
+  geom_line(color = 4,    # Color de la línea
+            lwd = 1,      # Ancho de la línea
+            linetype = 1) + # Tipo de línea 
+  theme(axis.ticks = element_line(color = 2,
+                                  linewidth = 2),plot.caption.position = "plot",
+                                                      plot.caption = element_text(hjust = 0))+
+  labs(title = "Movimiento de pasajeros",subtitle = "Viva Aerobus",caption = "Cifras en Miles")+
+  ylab("Número de Pasajeros")+ xlab("Tiempo")+
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y")+
+  scale_y_continuous(breaks = seq(0, 1600, by = 200)) 
+```
+```{r,echo=FALSE, warning = FALSE}
+pasajeros<- pasajeros[1:84,]
+pasajeros$LogVA<- log(pasajeros$`Viva Aerobus`)
+ggplot(pasajeros, aes(x = Mes, y =pasajeros$LogVA )) +
+  geom_line(color = 4,    # Color de la línea
+            lwd = 1,      # Ancho de la línea
+            linetype = 1) + # Tipo de línea 
+  theme(axis.ticks = element_line(color = 2,
+                                  linewidth = 2),plot.caption.position = "plot",
+        plot.caption = element_text(hjust = 0))+
+  labs(title = "Movimiento de pasajeros",subtitle = "Viva Aerobus",caption = "Cifras en Miles")+
+  ylab("Número de Pasajeros")+ xlab("Tiempo")+
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y")
+```
+
+```{r, echo=FALSE}
+##Definimos como serie de tiempo
+pasajerosts<-ts(pasajeros$LogVA,start = c(2012,1), frequency = 12)
+#plot(pasajerosts)
+componentes.ts<-decompose(pasajerosts,"multiplicative")
+plot(componentes.ts)
+```
+Separar la parte estacionaria
+
+```{r, echo=FALSE}
+i<-1
+a<-c()
+b<-c()
+while (i <=72) {
+ a<-pasajerosts[i+12]-pasajerosts[i]
+ b<- c(b, a)
+ i<-i+1
+}
+spc<-b
+pc<-pasajerosts[13:84]-spc
+plot(pc, col= "turquoise", xlab ="Tiempo", lwd=2, type="l", pch=10, main="Componente estacionaria")
+plot(spc, col= "turquoise", xlab ="Tiempo", lwd=2, type="l", pch=10, main="Sin componente estacionaria")
+```
+Revisar estacionariedad: Test Dickey Fuller
+```{r, echo=FALSE, warnings=FALSE, include=FALSE}
+b<-adf.test(spc)
+b<-c("Sin componente ciclica", round(b$statistic,2), round( b$p.value,2))
+adft<-t(data.frame(b))
+colnames(adft)<-c("datos", "estadístico","p value")
+xtable(adft)
+```
+```{=latex}
+\begin{table}[ht]
+\centering
+\begin{tabular}{rlll}
+  \hline
+  datos & estadístico & p value \\ 
+  \hline
+ Sin componente ciclica & -2.14 & 0.52 \\ 
+   \hline
+\end{tabular}
+\end{table}
+```
+Diferenciado para hacer a los datos estacionarios
+
+```{r, echo=FALSE}
+pcdiff<-diff(pc,differences=1)
+spcdiff<-diff(spc,differences=1)
+```
+Revisando estacionariedad
+```{r, echo=FALSE, warnings=FALSE, include=FALSE}
+b<-adf.test(spcdiff)
+b<-c("Sin componente ciclica", round(b$statistic,2), round( b$p.value,2))
+adft<-t(data.frame(b))
+colnames(adft)<-c("datos", "estadístico","p value")
+xtable(adft)
+```
+```{=latex}
+\begin{table}[ht]
+\centering
+\begin{tabular}{rlll}
+  \hline
+  datos & estadístico & p value \\ 
+  \hline
+ Sin componente ciclica & -4.05 & 0.01 \\ 
+   \hline
+\end{tabular}
+\end{table}
+```
+
+Componente no ciclica y diferenciada
+
+```{r, echo=FALSE}
+acf(spcdiff)
+pacf(spcdiff)
+```
+```{r,echo=FALSE}
+eacf(spcdiff)
+```
+
+Probar distintos modelos y compararlos
+```{r,echo=FALSE,warning=FALSE,include=FALSE}
+p1<-Arima(spc,order = c(0,1,1))
+p1<-c("ARIMA(0,1,1)",round(p1$aic,2),round(p1$bic,2))
+pp<-t(data.frame(p1))
+colnames(pp)<-c("modelo","AIC","BIC")
+xtable(pp)
+```
+```{=latex}
+\begin{table}[ht]
+\centering
+\begin{tabular}{rlll}
+  \hline
+  modelo & AIC & BIC \\ 
+  \hline
+ ARIMA(0,1,1) & -124.42 & -119.93 \\ 
+   \hline
+\end{tabular}
+\end{table}
+```
+
+```{r, echo=FALSE}
+modspc<-Arima(spc,order = c(0,1,1))
+Residuales<-modspc$residuals
+p<-c(rep(1,20))
+
+for (i in 1:20){
+  a<-Box.test(Residuales, lag = i, type =  "Ljung-Box", fitdf = 1)
+  p[i]<-a$p.value
+  
+}
+mat <- matrix(c(1, 1,
+                2, 3  # Primero, segundo
+                ), # y tercer gráfico
+              nrow = 2, ncol = 2,
+              byrow = TRUE)
+
+layout(mat = mat)
+plot(Residuales)
+acf(Residuales)
+pacf(Residuales)
+
+
+mat <- matrix(c(1, 2,
+                3, 3  # Primero, segundo
+), # y tercer gráfico
+nrow = 2, ncol = 2,
+byrow = TRUE)
+
+layout(mat = mat)
+hist(modspc$residuals,main=" Histograma de residuales",xlab="Tiempo",ylab="Residuales", cex.main=0.8)
+qqnorm(Residuales)
+qqline(Residuales, col = 2)
+plot(p, xlab="Lag",ylab="p-value",main="Ljung-Box Test")
+lines(x=seq(1,21,1),y=rep(0.05,21),col = "red")
+```
+
+Prueba Shapiro Wilk
+H0 : La distribución es normal
+H1 : La distribución no es normal
+```{r,echo=FALSE}
+ad.test(modspc$residuals)
+```
+
+
+Componente ciclica
+```{r, echo=FALSE}
+acf(pcdiff)
+pacf(pcdiff)
+```
+```{r,echo=FALSE}
+eacf(spcdiff,ma.max=25)
+```
+Probar distintos modelos y compararlos
+```{r,echo=FALSE,warning=FALSE,include=FALSE}
+p1<-Arima(pasajerosts,order=c(1,1,1),seasonal=list(order=c(2,1,1),period=12))
+p4<-Arima(pasajerosts,order=c(0,1,1),seasonal=list(order=c(2,1,1),period=12))
+p5<-Arima(pasajerosts,order=c(1,1,0),seasonal=list(order=c(2,1,1),period=12))
+p6<-Arima(pasajerosts,order=c(0,1,1),seasonal=list(order=c(0,1,1),period=12))
+p7<-Arima(pasajerosts,order=c(0,1,1),seasonal=list(order=c(2,1,0),period=12))
+p8<-Arima(pasajerosts,order=c(0,1,1),seasonal=list(order=c(0,1,2),period=12))
+m1<-c("SARIMA(1,1,1)(2,1,1)[12]",round(p1$aic,2),round(p1$bic,2), "0.193","Sí" )
+m2<-c("SARIMA(1,1,1)(2,1,3)[12]", "error","error", "error", "error")
+m3<-c("SARIMA(11,1,1)(2,1,1)[12]", "error","error", "error", "error")
+m4<-c("SARIMA(0,1,1)(2,1,1)[12]",round(p4$aic,2),round(p4$bic,2), "0.027","No")
+m5<-c("SARIMA(1,1,0)(2,1,1)[12]",round(p5$aic,2),round(p5$bic,2), 0.323,"Sí")
+m6<-c("SARIMA(0,1,1)(0,1,1)[12]",round(p6$aic,2),round(p6$bic,2), 0.162,"Sí")
+m7<-c("SARIMA(0,1,1)(2,1,0)[12]",round(p7$aic,2),round(p7$bic,2), 0.029,"Sí")
+m8<-c("SARIMA(0,1,1)(0,1,2)[12]",round(p8$aic,2),round(p8$bic,2), 0.234,"Sí")
+pp<-t(data.frame(m1,m2,m3,m4,m5,m6,m7,m8))
+colnames(pp)<-c("modelo","AIC","BIC", "Shapiro-wilk","no autocorrelación Ljung-Box")
+xtable(pp)
+```
+```{=latex}
+\begin{table}[ht]
+\centering
+\begin{tabular}{rlllll}
+  \hline
+ & modelo & AIC & BIC & Shapiro-wilk & no autocorrelación Ljung-Box \\ 
+  \hline
+m1 & SARIMA(1,1,1)(2,1,1)[12] & -172.46 & -158.88 & 0.193 & Sí \\ 
+  m2 & SARIMA(1,1,1)(2,1,3)[12] & error & error & error & error \\ 
+  m3 & SARIMA(11,1,1)(2,1,1)[12] & error & error & error & error \\ 
+  m4 & SARIMA(0,1,1)(2,1,1)[12] & -174.86 & -163.54 & 0.027 & No \\ 
+  m5 & SARIMA(1,1,0)(2,1,1)[12] & -173.44 & -162.12 & 0.323 & Sí \\ 
+  m6 & SARIMA(0,1,1)(0,1,1)[12] & -177.31 & -170.52 & 0.162 & Sí \\ 
+  m7 & SARIMA(0,1,1)(2,1,0)[12] & -175.6 & -166.55 & 0.029 & Sí \\ 
+  m8 & SARIMA(0,1,1)(0,1,2)[12] & -176.35 & -167.3 & 0.234 & Sí \\ 
+   \hline
+\end{tabular}
+\end{table}
+
+```
+```{r, echo=FALSE}
+p6<-Arima(pasajerosts,order=c(1,1,1),seasonal=list(order=c(2,1,1),period=12))
+Residuales<-p8$residuals
+p<-c(rep(1,20))
+
+for (i in 1:20){
+  a<-Box.test(Residuales, lag = i, type =  "Ljung-Box", fitdf = 1)
+  p[i]<-a$p.value
+  
+}
+mat <- matrix(c(1, 1,
+                2, 3  # Primero, segundo
+                ), # y tercer gráfico
+              nrow = 2, ncol = 2,
+              byrow = TRUE)
+
+layout(mat = mat)
+plot(Residuales)
+acf(Residuales)
+pacf(Residuales)
+
+
+mat <- matrix(c(1, 2,
+                3, 3  # Primero, segundo
+), # y tercer gráfico
+nrow = 2, ncol = 2,
+byrow = TRUE)
+
+layout(mat = mat)
+hist(Residuales,main=" Histograma de residuales" ,xlab="Tiempo",ylab="Residuales", cex.main=0.7)
+qqnorm(Residuales)
+qqline(Residuales, col = 2)
+plot(p, xlab="Lag",ylab="p-value",main="Ljung-Box Test")
+lines(x=seq(1,21,1),y=rep(0.05,21),col = "red")
+```
+Prueba Shapiro Wilk
+H0 : La distribución es normal
+H1 : La distribución no es normal
+```{r,echo=FALSE}
+shapiro.test(p8$residuals)
+
+```
+
+MODELO SARIMA PROPUESTO (1,1,1)(2,1,1)
+
+
+```{r,echo=FALSE}
+mod<-Arima(pasajerosts,order=c(0,1,1),seasonal=list(order=c(0,1,1),period=12))
+mod
+```
+```{r,echo=FALSE}
+Residuales<-mod$residuals
+p<-c(rep(1,36))
+
+for (i in 1:36){
+  a<-Box.test(Residuales, lag = i, type =  "Ljung-Box", fitdf = 1)
+  p[i]<-a$p.value
+  
+}
+mat <- matrix(c(1, 1,
+                2, 3  # Primero, segundo
+                ), # y tercer gráfico
+              nrow = 2, ncol = 2,
+              byrow = TRUE)
+
+layout(mat = mat)
+plot(Residuales)
+acf(Residuales)
+pacf(Residuales)
+
+
+mat <- matrix(c(1, 2,
+                3, 3  # Primero, segundo
+), # y tercer gráfico
+nrow = 2, ncol = 2,
+byrow = TRUE)
+
+layout(mat = mat)
+hist(Residuales,main=" Histograma de residuales del modelo" ,xlab="Tiempo",ylab="Residuales", cex.main=0.8)
+qqnorm(Residuales)
+qqline(Residuales, col = 2)
+plot(p, xlab="Lag",ylab="p-value",main="Ljung-Box Test")
+lines(x=seq(1,36,1),y=rep(0.05,36),col = "red")
+```
+
+```{r,echo=FALSE}
+shapiro.test(mod$residuals)
+```
+
+MODELO SARIMA PROPUESTO (0,1,1)(0,1,2)
+
+
+```{r,echo=FALSE}
+mod<-Arima(pasajerosts,order=c(0,1,1),seasonal=list(order=c(0,1,1),period=12))
+mod
+```
+```{r,echo=FALSE}
+Residuales<-p6$residuals
+p<-c(rep(1,20))
+
+for (i in 1:20){
+  a<-Box.test(Residuales, lag = i, type =  "Ljung-Box", fitdf = 1)
+  p[i]<-a$p.value
+  
+}
+mat <- matrix(c(1, 1,
+                2, 3  # Primero, segundo
+                ), # y tercer gráfico
+              nrow = 2, ncol = 2,
+              byrow = TRUE)
+
+layout(mat = mat)
+plot(Residuales)
+acf(Residuales)
+pacf(Residuales)
+
+
+mat <- matrix(c(1, 2,
+                3, 3  # Primero, segundo
+), # y tercer gráfico
+nrow = 2, ncol = 2,
+byrow = TRUE)
+
+layout(mat = mat)
+hist(Residuales,main=" Histograma de residuales del modelo" ,xlab="Tiempo",ylab="Residuales", cex.main=0.8)
+qqnorm(Residuales)
+qqline(Residuales, col = 2)
+plot(p, xlab="Lag",ylab="p-value",main="Ljung-Box Test")
+lines(x=seq(1,21,1),y=rep(0.05,21),col = "red")
+```
+
+```{r,echo=FALSE}
+shapiro.test(mod$residuals)
+```
